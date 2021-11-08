@@ -15,48 +15,48 @@ import 'plugin/fps_plugin.dart';
 class Fps {
   /// 单例
   static Fps get instance {
-    if (_instance == null) {
-      _instance = Fps._();
-    }
-    return _instance;
+    return _instance ??= Fps._();
   }
 
-  static Fps _instance;
+  static Fps? _instance;
 
   static const _maxFrames = 120; // 最大保存帧数据，100 帧足够了，对于 60 fps 来说
-  final lastFrames =
-      ListQueue<FrameTiming>(_maxFrames); //保存帧数据的队列，约定队头为最后一帧，队尾为开始一帧
-  TimingsCallback _timingsCallback;
+  final lastFrames = ListQueue<FrameTiming>(_maxFrames); //保存帧数据的队列，约定队头为最后一帧，队尾为开始一帧
   List<FpsCallback> _callBackList = [];
 
+  late TimingsCallback _timingsCallback;
+
+  /// 一般手机为60帧
+  late double _fpsHz;
+
+  /// 60帧，那就是16.67ms*1000 微秒
+  late Duration _frameInterval;
+
   Fps._() {
+    _init();
+  }
+
+  void _init() async {
+    _fpsHz = await FpsPlugin.getRefreshRate;
+    _frameInterval = Duration(microseconds: Duration.microsecondsPerSecond ~/ _fpsHz);
     _timingsCallback = (List<FrameTiming> timings) {
       //异步计算fps
       _computeFps(timings);
     };
-    SchedulerBinding.instance.addTimingsCallback(_timingsCallback);
+    SchedulerBinding.instance?.addTimingsCallback(_timingsCallback);
   }
 
-  registerCallBack(FpsCallback back) {
-    _callBackList?.add(back);
+  void registerCallBack(FpsCallback back) {
+    _callBackList.add(back);
   }
 
-  unregisterCallBack(FpsCallback back) {
-    _callBackList?.remove(back);
+  void unregisterCallBack(FpsCallback back) {
+    _callBackList.remove(back);
   }
 
-  cancel() {
-    if (_timingsCallback == null) {
-      return;
-    }
-    SchedulerBinding.instance.removeTimingsCallback(_timingsCallback);
+  void cancel() {
+    SchedulerBinding.instance?.removeTimingsCallback(_timingsCallback);
   }
-
-  /// 一般手机为60帧
-  double _fpsHz;
-
-  /// 60帧，那就是16.67ms*1000 微秒
-  Duration _frameInterval;
 
   /// 计算fps
   Future<void> _computeFps(List<FrameTiming> timings) async {
@@ -73,17 +73,6 @@ class Fps {
 
     var lastFramesSet = <FrameTiming>[];
 
-    // 获取当前手机的fps
-    if (_fpsHz == null) {
-      _fpsHz = await FpsPlugin.getRefreshRate;
-    }
-
-    //每帧消耗的时间，单位微秒
-    if (_frameInterval == null) {
-      _frameInterval =
-          Duration(microseconds: Duration.microsecondsPerSecond ~/ _fpsHz);
-    }
-
     for (FrameTiming timing in lastFrames) {
       //lastFrames 队头是最后的帧，所以第一次取出来的是队尾帧
       if (lastFramesSet.isEmpty) {
@@ -94,8 +83,7 @@ class Fps {
         var lastStart = //frame4的build开始，即frame3的rasterFinish，但中间是会有间隔的
             lastFramesSet.last.timestampInMicroseconds(FramePhase.buildStart);
         // 上面提到的间隔时间
-        var interval =
-            lastStart - timing.timestampInMicroseconds(FramePhase.rasterFinish);
+        var interval = lastStart - timing.timestampInMicroseconds(FramePhase.rasterFinish);
         //相邻两帧如果开始结束相差时间过大，比如大于 frameInterval * 2，认为是不同绘制时间段产生的
         if (interval > (_frameInterval.inMicroseconds * 2)) {
           break; //注意这里是break，这次循环结束了，虽然在同一个队列里，但有可能相邻的两帧不在一个时间段，所以不能放一起计算，有个开源的就是没处理这里
@@ -119,15 +107,12 @@ class Fps {
       // 16ms ~/ 16ms = 0
       // 17ms ~/ 16ms = 1
       // 所以只要droppedCount大于0 ，认为当前帧是丢帧的
-      int droppedCount =
-          (frame.totalSpan.inMicroseconds ~/ _frameInterval.inMicroseconds);
-      return droppedCount +
-          1; //自己本身绘制的一帧，这里加一是因为认为丢帧了，加1变成2或3，主要看实际消耗的时长，如果是正常帧，那就是0+1=1
+      int droppedCount = (frame.totalSpan.inMicroseconds ~/ _frameInterval.inMicroseconds);
+      return droppedCount + 1; //自己本身绘制的一帧，这里加一是因为认为丢帧了，加1变成2或3，主要看实际消耗的时长，如果是正常帧，那就是0+1=1
     }) //这里返回的其实是个list<int>
-        .fold(
+        .fold<int>(
             0, //计算的初始值
-            (a, b) =>
-                a + b); //计算总的帧数，fold就是list[0]+list[1]+....list[list.len-1]
+            (a, b) => a + b); //计算总的帧数，fold就是list[0]+list[1]+....list[list.len-1]
 
     //丢帧数=总帧数-绘制帧数
     droppedCount = costCount - drawFramesCount;
@@ -135,7 +120,7 @@ class Fps {
 //    DebugLog.instance.log(
 //        "computerFps _fpsHz is $_fpsHz drawFrame is $fps,dropFrameCount is $droppedCount");
     lastFrames.clear();
-    _callBackList?.forEach((callBack) {
+    _callBackList.forEach((callBack) {
       callBack(fps, droppedCount.toDouble());
     });
   }

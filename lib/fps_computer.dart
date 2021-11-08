@@ -20,14 +20,14 @@ class Fps {
 
   static Fps? _instance;
 
-  static const _maxFrames = 120; // 最大保存帧数据，100 帧足够了，对于 60 fps 来说
-  final lastFrames = ListQueue<FrameTiming>(_maxFrames); //保存帧数据的队列，约定队头为最后一帧，队尾为开始一帧
+  late final lastFrames = ListQueue<FrameTiming>(_maxFrames); //保存帧数据的队列，约定队头为最后一帧，队尾为开始一帧
   List<FpsCallback> _callBackList = [];
 
   late TimingsCallback _timingsCallback;
 
   /// 一般手机为60帧
   late double _fpsHz;
+  late int _maxFrames;
 
   /// 60帧，那就是16.67ms*1000 微秒
   late Duration _frameInterval;
@@ -38,6 +38,7 @@ class Fps {
 
   void _init() async {
     _fpsHz = await FpsPlugin.getRefreshRate;
+    _maxFrames = (_fpsHz * 2).ceil();
     _frameInterval = Duration(microseconds: Duration.microsecondsPerSecond ~/ _fpsHz);
     _timingsCallback = (List<FrameTiming> timings) {
       //异步计算fps
